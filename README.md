@@ -1,88 +1,77 @@
-# Distil: a colour palette generator
+# distil-wasm
+This is a WebAssembly port of Elliot Jackson's Distil app (original repo: [https://github.com/elliotekj/distil](https://github.com/elliotekj/distil)
 
-> WIP - Not ready for production use
+## Usage
 
-Distil is a Rust library that creates a colour palette from the most frequently
-used colours in an image.
+```bash
+npm init wasm-app
+cd wasm-app
+npm i distil
+npm start
+```
 
-| [**Examples**](https://github.com/elliotekj/distil#examples) | [**How does it work?**](https://github.com/elliotekj/distil#how-does-it-work) | [**1.0 checklist**](https://github.com/elliotekj/distil#10-checklist) |
+In the generated `index.js` we can add the following lines of code to get a result:
 
-## How does it work?
+```javascript
+import { distil } from 'distil';
 
-Lets go through it step by step.
+const loadImage = async (imageName, size) => {
+	const response = await fetch(imageName);
+	const blob = await response.blob();
+	const result = await new Promise((resolve, reject) => {
+	  const reader = new FileReader();
+	  reader.onloadend = () => {
+	    if (reader.result instanceof ArrayBuffer) {
+	      return resolve(reader.result);
+	    } else {
+	      return reject(new Error("Could not create arraybuffer"));
+	    }
+	  };
+	  reader.onerror = reject;
+	  reader.readAsArrayBuffer(blob);
+	});
 
-##### Downsampling
+		
+	renderImg(distil(new Uint8Array(result), size), size);
+};
 
-Distil starts by scaling the image down—whilst preserving its aspect ratio—until
-it consists of no more that 1000 pixels.
+const renderImg = async (imageName, size) => {
+	const response = await fetch(imageName);
+	const blob = await response.blob();
+	const result = await new Promise((resolve, reject) => {
+	  const reader = new FileReader();
+	  reader.onloadend = () => {
+	    if (reader.result instanceof ArrayBuffer) {
+	      return resolve(reader.result);
+	    } else {
+	      return reject(new Error("Could not create arraybuffer"));
+	    }
+	  };
+	  reader.onerror = reject;
+	  reader.readAsArrayBuffer(blob);
+	});
 
-##### Quantization
+		
+	const colors = distil_hex(new Uint8Array(result), size);
 
-From there, it's run through the [NeuQuant
-algorithm](https://scientificgems.wordpress.com/stuff/neuquant-fast-high-quality-image-quantization/)
-to reduce it to an 8-bit image composed of 256 colours.
+	const container = document.body;
+	container.innerHTML = '';
 
-##### Colour differentiation
+	colors.forEach(([r, g, b]) => {
+		const span = document.createElement('span');
+		span.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+		span.style.width="100px";
+		span.style.height="100px";
+		span.style.display="inline-block";
+		container.appendChild(span);
+	});
+};
 
-Next, the number of appearances each unique colour makes in the image is counted
-and put into a `Vec`. That `Vec` is then sorted by most frequently used colour
-to least frequently used. Lets name it `palette` for the sake of clarity going
-forward.
+```
 
-A separate `Vec`, which we'll dub `refined_palette`, is now created and it's
-from that `Vec` that the final palette will be built.
+and for an example like this;
 
-Starting from the top (i.e. the most frequently used colour), the program then
-works its way down `palette` comparing how similar `x` — the current colour from
-`palette` being processed — is by human eye standards to each and every colour
-in `refined_palette`.
+![](./images/img-1.jpg?raw=true)
 
-If there are no colours similar to `x` already in `refined_palette`, then `x`
-gets added to `refined_palette`. If, however, there is a similar colour already
-in `refined_palette` then an average is made of the two colours which takes into account
-their frequency in the image.
+you should get the following output:
 
-The difference between two colours from the human eye perspective is calculated
-with the [CIEDE2000 colour difference
-algorithm](https://en.wikipedia.org/wiki/Color_difference#CIEDE2000).
-
-##### Colour weight
-
-With all of the colours now processed, the colours in the `refined_palette`
-`Vec` are once again sorted from most frequently used to least frequently used.
-An important note here though is that the sorting is done taking into account
-the occurrence count of each of the pixels that were deemed similar in colour
-and merged together when building `refined_palette`.
-
-## 1.0 checklist
-
-- [x] Handle a pure-white or pure-black image being processed. Pixels that are
-  too dark or too light to be interesting in a palette currently get filtered
-  out during quantization.
-- [ ] Add a way to create a distillation from multiple `Distil`s. i.e. A way to
-  get one `Distil` from the colours of multiple images.
-
-## Examples
-
-![](https://github.com/elliotekj/distil/blob/master/images/img-1.jpg?raw=true)
-![](https://github.com/elliotekj/distil/blob/master/images/img-1-palette.png?raw=true)
-
-<br>
-
-![](https://github.com/elliotekj/distil/blob/master/images/img-3.jpg?raw=true)
-![](https://github.com/elliotekj/distil/blob/master/images/img-3-palette.png?raw=true)
-
-<br>
-
-![](https://github.com/elliotekj/distil/blob/master/images/img-4.jpg?raw=true)
-![](https://github.com/elliotekj/distil/blob/master/images/img-4-palette.png?raw=true)
-
-<br>
-
-![](https://github.com/elliotekj/distil/blob/master/images/img-6.jpg?raw=true)
-![](https://github.com/elliotekj/distil/blob/master/images/img-6-palette.png?raw=true)
-
-<br>
-
-![](https://github.com/elliotekj/distil/blob/master/images/img-5.jpg?raw=true)
-![](https://github.com/elliotekj/distil/blob/master/images/img-5-palette.png?raw=true)

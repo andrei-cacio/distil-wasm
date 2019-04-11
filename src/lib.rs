@@ -3,13 +3,17 @@ extern crate delta_e;
 extern crate image;
 extern crate itertools;
 extern crate lab;
+extern crate wasm_bindgen;
 #[macro_use]
 extern crate quick_error;
+#[macro_use]
+extern crate serde_derive;
 
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use wasm_bindgen::prelude::*;
 
 use color_quant::NeuQuant;
 use delta_e::DE2000;
@@ -47,11 +51,13 @@ quick_error! {
     }
 }
 
+
 /// Represents a distilled image.
 #[derive(Debug, Clone)]
 pub struct Distil {
     /// `colors` contains all of the RGB values the image was distilled down
     /// into organised from most-frequent to least-frequent.
+    #[derive(Serialize)]
     pub colors: Vec<[u8; 3]>,
 
     /// `color_count` maps the index of each color in `colors` to the total
@@ -64,51 +70,6 @@ pub struct Distil {
 }
 
 impl Distil {
-    /// `from_path_str` takes a path to an image which exists locally on the
-    /// system and `Distil`s it.
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// use distil::Distil;
-    ///
-    /// let path_str = "/Users/elliot/dev/distil/images/img-1.jpg";
-    ///
-    /// if let Ok(distilled) = Distil::from_path_str(path_str) {
-    ///     // Do something with the returned `Distil` struct…
-    /// }
-    /// ```
-    pub fn from_path_str(path_str: &str) -> Result<Distil, DistilError> {
-        let path = Path::new(&path_str);
-        Distil::from_path(&path)
-    }
-
-    /// `from_path` takes a `&Path` to an image which exists locally on the
-    /// system and `Distil`s it.
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// use std::path::Path;
-    /// use distil::Distil;
-    ///
-    /// let path = Path::new("/Users/elliot/dev/distil/images/img-1.jpg");
-    ///
-    /// if let Ok(distilled) = Distil::from_path(&path) {
-    ///     // Do something with the returned `Distil` struct…
-    /// }
-    /// ```
-    pub fn from_path(path: &Path) -> Result<Distil, DistilError> {
-        let image_format = get_image_format(&path)?;
-
-        is_supported_format(image_format)?;
-
-        match image::open(path) {
-            Ok(img) => return Distil::new(img),
-            Err(err) => return Err(DistilError::Io(format!("{:?}", path), err)),
-        }
-    }
-
     fn new(img: DynamicImage) -> Result<Distil, DistilError> {
         let scaled_img = scale_img(img);
 
@@ -123,23 +84,7 @@ impl Distil {
         }
     }
 
-    /// Export the distilled color palette as a PNG.
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// use std::path::Path;
-    /// use distil::Distil;
-    ///
-    /// let path_str = "/Users/elliot/dev/distil/images/img-1.jpg";
-    /// let output_str = "img-1-palette.png";
-    /// let palette_size = 5;
-    ///
-    /// if let Ok(distilled) = Distil::from_path_str(path_str) {
-    ///     distilled.as_img(&Path::new(output_str), palette_size);
-    /// }
-    /// ```
-    pub fn as_img(&self, out_path: &Path, palette_size: u8) {
+    pub fn as_img(&self, palette_size: u8) -> DynamicImage {
         let colors_img_width;
 
         if self.colors.len() < palette_size as usize {
@@ -164,9 +109,11 @@ impl Distil {
             }
         }
 
-        if let Ok(ref mut fout) = File::create(&out_path) {
-            let _ = image::ImageRgb8(colors_img_buf).save(fout, image::PNG);
-        };
+        image::ImageRgb8(colors_img_buf)
+    }
+
+    pub fn as_hex(&self) -> JsValue {
+        JsValue::from_serde(&self.colors).unwrap()
     }
 }
 
@@ -211,12 +158,6 @@ fn scale_img(mut img: DynamicImage) -> DynamicImage {
     img
 }
 
-/// Uses the NeuQuant quantization algorithm to reduce the passed image to a
-/// palette of `NQ_PALETTE_SIZE` colors.
-///
-/// Note: NeuQuant is designed to produce images with between 64 and 256
-/// colors. As such, `NQ_PALETTE_SIZE`'s value should be kept within those
-/// bounds.
 fn quantize(img: DynamicImage) -> Result<Vec<Rgb<u8>>, DistilError> {
     match get_pixels(img) {
         Ok(pixels) => {
@@ -235,11 +176,6 @@ fn quantize(img: DynamicImage) -> Result<Vec<Rgb<u8>>, DistilError> {
         Err(err) => Err(err),
     }
 }
-
-/// Processes each of the pixels in the passed image, filtering out any that are
-/// transparent or too light / dark to be interesting, then returns a `Vec` of the
-/// `Rgba` channels of "interesting" pixels which is intended to be fed into
-/// `NeuQuant`.
 fn get_pixels(img: DynamicImage) -> Result<Vec<u8>, DistilError> {
     let mut pixels = Vec::new();
 
@@ -292,7 +228,7 @@ fn count_colors_as_lab(pixels: Vec<Rgb<u8>>) -> Vec<(Lab, usize)> {
         .fold(Vec::new(), |mut acc, (color, count)| {
             let rgb = Rgb::from_slice(&color).to_owned();
             acc.push((Lab::from_rgb(&[rgb[0], rgb[1], rgb[2]]), *count as usize));
-            acc
+            acc 
         });
 
     color_count_vec.sort_by(|&(_, a), &(_, b)| b.cmp(&a));
@@ -365,70 +301,30 @@ fn distil_palette(palette: Vec<(Lab, usize)>) -> Distil {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
+fn load_image_from_array(_array: &[u8]) -> DynamicImage { 
+    image::load_from_memory(_array).unwrap()
+}
 
-    use super::{Distil, DistilError};
+fn return_image_as_array(_img: DynamicImage) -> Vec<u8> {
+    let mut vec: Vec<u8> = vec![];
 
-    #[test]
-    fn from_path_str() {
-        let path_str = "./images/img-1.jpg";
+    _img.write_to(&mut vec, ImageFormat::JPEG).unwrap();
 
-        match Distil::from_path_str(path_str) {
-            Ok(distilled) => {
-                distilled.as_img(&Path::new("img-1-palette.png"), 5);
-            }
-            Err(err) => {
-                println!("{}", err);
-            }
-        }
-    }
+    vec
+}
 
-    #[test]
-    fn from_path() {
-        let path = Path::new("./images/img-1.jpg");
+#[wasm_bindgen]
+pub fn distil_as_img( _array: &[u8], size: u8) -> Vec<u8> {
+    let img = load_image_from_array(_array);
 
-        match Distil::from_path(&path) {
-            Ok(distilled) => {
-                distilled.as_img(&Path::new("img-1-palette.png"), 5);
-            }
-            Err(err) => {
-                println!("{}", err);
-            }
-        }
-    }
+    let img = Distil::new(img).unwrap().as_img(size);
 
-    #[test]
-    fn pure_white() {
-        let path = Path::new("./tests/pure-white.png");
-        let distilled_err = Distil::from_path(&path).unwrap_err();
+    return_image_as_array(img)
+}
 
-        match distilled_err {
-            DistilError::Uninteresting => assert!(true),
-            _ => assert!(false),
-        }
-    }
+#[wasm_bindgen]
+pub fn distil(_array: &[u8]) -> JsValue {
+    let img = load_image_from_array(_array);
 
-    #[test]
-    fn pure_black() {
-        let path = Path::new("./tests/pure-black.png");
-        let distilled_err = Distil::from_path(&path).unwrap_err();
-
-        match distilled_err {
-            DistilError::Uninteresting => assert!(true),
-            _ => assert!(false),
-        }
-    }
-
-    #[test]
-    fn unsupported_format() {
-        let path = Path::new("./tests/unsupported-format.gif");
-        let distilled_err = Distil::from_path(&path).unwrap_err();
-
-        match distilled_err {
-            DistilError::UnsupportedFormat => assert!(true),
-            _ => assert!(false),
-        }
-    }
+    Distil::new(img).unwrap().as_hex()    
 }
