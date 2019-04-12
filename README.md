@@ -3,7 +3,7 @@
 # distil-wasm
 This is a WebAssembly port of Elliot Jackson's Distil app (original repo: [https://github.com/elliotekj/distil](https://github.com/elliotekj/distil)
 
-## Instalation
+## Installation
 
 ```bash
 npm i distil
