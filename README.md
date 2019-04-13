@@ -37,7 +37,7 @@ After running `npm init wasm-app` we will have a full project generated and read
 import { distil } from `distil`
 ```
 
-the module export the following method: `distil(img: Uint8Array[]) -> Uint8Array[]`. It will recieve an image as an array buffer and it will return the same thing.
+the module export the following method: `distil(img: Uint8Array[]) -> [[r, g, b], ...]`. It will recieve an image as an array buffer and it will a matrix with three columns (r, g, b) and ten rows, like: `[[255, 255, 255], ...]` which will represet our distilled colors.
 
 ### Example
 In the generated `index.js` we can add the following lines of code to get a result:
